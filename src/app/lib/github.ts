@@ -9,7 +9,6 @@ export async function fetchPRs(owner: string, repo: string) {
 }
 
 function extractLogsFromText(text: string): string[] {
-  // Simple heuristic: extract code blocks (```) or lines containing "error", "exception", or "trace"
   if (!text) return [];
   const codeBlocks = Array.from(text.matchAll(/```([\s\S]*?)```/g)).map((m) =>
     m[1].trim(),
@@ -25,16 +24,19 @@ export async function fetchPRDetails(
   repo: string,
   pull_number: number,
 ) {
-  const [pr, files, comments] = await Promise.all([
+  const [pr, files, reviewComments] = await Promise.all([
     octokit.pulls.get({ owner, repo, pull_number }),
     octokit.pulls.listFiles({ owner, repo, pull_number }),
-    octokit.pulls.listCommits({ owner, repo, pull_number }),
+    octokit.pulls.listReviewComments({ owner, repo, pull_number }),
   ]);
+  const allComments = [...reviewComments.data];
   const logs = [
     ...extractLogsFromText(pr.data.body || ""),
-    ...comments.data.flatMap((c: any) => extractLogsFromText(c.body || "")),
+    ...allComments.flatMap((c: any) => extractLogsFromText(c.body || "")),
   ];
+
   console.log("logs", logs);
+  console.log("reviewComments", reviewComments.data);
   return {
     summary: {
       number: pr.data.number,
@@ -53,15 +55,41 @@ export async function fetchPRDetails(
       patch: f.patch,
     })),
     logs,
-    comments: comments.data.map((c: any) => ({
-      user: c.user?.login,
-      body: c.body,
-      created_at: c.created_at,
-    })),
+    comments: allComments
+      .filter((c: any) => c && c.body)
+      .map((c: any) => ({
+        user: c.user?.login,
+        body: c.body,
+        created_at: c.created_at,
+      })),
   };
 }
 
 export async function fetchIssues(owner: string, repo: string) {
   const { data } = await octokit.issues.listForRepo({ owner, repo });
+  return data;
+}
+
+// Fetch a single issue by number
+export async function fetchIssue(
+  owner: string,
+  repo: string,
+  issue_number: number,
+) {
+  const { data } = await octokit.issues.get({ owner, repo, issue_number });
+  return data;
+}
+
+// Fetch comments for a specific issue
+export async function fetchIssueComments(
+  owner: string,
+  repo: string,
+  issue_number: number,
+) {
+  const { data } = await octokit.issues.listComments({
+    owner,
+    repo,
+    issue_number,
+  });
   return data;
 }
