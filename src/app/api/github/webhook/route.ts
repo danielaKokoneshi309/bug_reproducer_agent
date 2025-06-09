@@ -104,11 +104,10 @@ export async function POST(req: NextRequest) {
 // Extract logs from PR body and comments
 function extractLogsFromText(text: string): string[] {
   if (!text) return [];
-  // Extract code blocks (```...```)
+
   const codeBlocks = Array.from(text.matchAll(/```([\s\S]*?)```/g)).map((m) =>
     m[1].trim(),
   );
-  // Extract lines with 'error', 'exception', or 'trace'
   const errorLines = text
     .split("\n")
     .filter((line) => /error|exception|trace/i.test(line));
