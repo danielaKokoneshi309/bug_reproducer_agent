@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-import { fetchPRDetails, fetchIssueComments } from "@/app/lib/github";
+import { fetchIssueComments } from "@/app/lib/github";
 import { analyzeRootCause } from "@/app/lib/llm";
+import { getInstallationOctokit as getInstallationOctokitApp } from "@/app/lib/github";
 
 export async function POST(req: NextRequest) {
   const event = req.headers.get("x-github-event");
@@ -13,23 +14,53 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  let logs = "",
-    diffs = "",
+  const installationId = payload.installation?.id;
+  if (!installationId) {
+    return NextResponse.json({ error: "No installation ID" }, { status: 400 });
+  }
+  const octokit = await getInstallationOctokitApp(installationId);
+
+  let diffs = "",
     code = "",
     comments = "";
+
+  const logs = "";
 
   if (event === "pull_request" && payload.action === "opened") {
     const { number } = payload.pull_request;
     const repo = payload.repository.name;
     const owner = payload.repository.owner.login;
-    const details = await fetchPRDetails(owner, repo, number);
-    logs = (details.logs || []).join("\n");
-    diffs = (details.diffs || [])
+
+    const { data: files } = await octokit.pulls.listFiles({
+      owner,
+      repo,
+      pull_number: number,
+    });
+    diffs = (files || [])
       .map((d: any) => `File: ${d.filename}\n${d.patch || ""}`)
       .join("\n\n");
-    comments = (details.comments || [])
-      .map((c: any) => `${c.user}: ${c.body}`)
+    const { data: commentsArr } = await octokit.issues.listComments({
+      owner,
+      repo,
+      issue_number: number,
+    });
+    comments = (commentsArr || [])
+      .map((c: any) => `${c.user?.login}: ${c.body}`)
       .join("\n\n");
+
+    const { data: pr } = await octokit.pulls.get({
+      owner,
+      repo,
+      pull_number: number,
+    });
+
+    const logs = [
+      ...extractLogsFromText(pr.body || ""),
+      ...commentsArr.flatMap((c: any) => extractLogsFromText(c.body || "")),
+    ].join("\n");
+
+    const analysis = await analyzeRootCause({ logs, diffs, code, comments });
+    return NextResponse.json({ analysis });
   } else if (event === "issue_comment" && payload.action === "created") {
     const issue_number = payload.issue.number;
     const repo = payload.repository.name;
@@ -58,7 +89,7 @@ export async function POST(req: NextRequest) {
     const comments = reviewComment;
     const analysis = await analyzeRootCause({ logs, diffs, code, comments });
 
-    return NextResponse.json({ analysis: analysis });
+    return NextResponse.json({ analysis });
   } else {
     return NextResponse.json({ message: "Event ignored" });
   }
@@ -68,4 +99,18 @@ export async function POST(req: NextRequest) {
   // To do Post the analysis as a comment on the PR/issue using GitHub API use octokit.issues.createComment({ owner, repo, issue_number, body: analysis })
 
   return NextResponse.json({ analysis: analysis });
+}
+
+// Extract logs from PR body and comments
+function extractLogsFromText(text: string): string[] {
+  if (!text) return [];
+  // Extract code blocks (```...```)
+  const codeBlocks = Array.from(text.matchAll(/```([\s\S]*?)```/g)).map((m) =>
+    m[1].trim(),
+  );
+  // Extract lines with 'error', 'exception', or 'trace'
+  const errorLines = text
+    .split("\n")
+    .filter((line) => /error|exception|trace/i.test(line));
+  return [...codeBlocks, ...errorLines];
 }

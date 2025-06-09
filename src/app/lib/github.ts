@@ -1,7 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Octokit } from "@octokit/rest";
+import { App } from "@octokit/app";
 
 export const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+
+const app = new App({
+  appId: process.env.APP_ID!,
+  privateKey: process.env.PRIVATE_KEY!.replace(/\\n/g, "\n"),
+  webhooks: {
+    secret: process.env.WEBHOOK_SECRET!,
+  },
+});
+
+export async function getInstallationOctokit(installationId: number) {
+  const installationAccessToken = await app.getInstallationOctokit(
+    installationId,
+  );
+  return new Octokit({ auth: installationAccessToken });
+}
 
 export async function fetchPRs(owner: string, repo: string) {
   const { data } = await octokit.pulls.list({ owner, repo, state: "open" });
