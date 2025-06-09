@@ -85,7 +85,6 @@ export async function POST(req: NextRequest) {
     payload.action === "created"
   ) {
     const reviewComment = payload.comment.body;
-
     const comments = reviewComment;
     const analysis = await analyzeRootCause({ logs, diffs, code, comments });
 
