@@ -97,10 +97,27 @@ export async function POST(req: NextRequest) {
   ) {
     const reviewComment = payload.comment.body;
     const comments = reviewComment;
+    const repo = payload.repository.name;
+    const owner = payload.repository.owner.login;
+    const number = payload.pull_request.number;
+
     addJob(async () => {
       const analysis = await analyzeRootCause({ logs, diffs, code, comments });
-      console.log("Analysis (async):", analysis);
+      const analysisText = Array.isArray(analysis)
+        ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
+        : String(analysis);
+
+      await octokit.request(
+        "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+        {
+          owner,
+          repo,
+          issue_number: number,
+          body: analysisText,
+        },
+      );
     });
+
     return NextResponse.json({ ok: true });
   } else {
     return NextResponse.json({ message: "Event ignored" });
