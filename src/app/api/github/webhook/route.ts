@@ -84,7 +84,6 @@ export async function POST(req: NextRequest) {
     const repo = payload.repository.name;
     const owner = payload.repository.owner.login;
     const issueComments = await fetchIssueComments(owner, repo, issue_number);
-
     comments = (issueComments || [])
       .map((c: any) => `${c.user?.login}: ${c.body}`)
       .join("\n\n");
