@@ -98,6 +98,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ analysis });
   } else {
+    console.log("Event ignored is ...", event);
     return NextResponse.json({ message: "Event ignored" });
   }
 
