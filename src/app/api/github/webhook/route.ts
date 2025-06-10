@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
         ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
         : String(analysis);
 
-      await octokit.request(
+      const res = await octokit.request(
         "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
         {
           owner,
@@ -120,6 +120,7 @@ export async function POST(req: NextRequest) {
           side: payload.comment.side || "RIGHT",
         },
       );
+      console.log("Analysis posted", res);
     });
 
     return NextResponse.json({ ok: true });
