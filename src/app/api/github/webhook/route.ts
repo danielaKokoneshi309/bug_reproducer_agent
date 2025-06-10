@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
   if (!installationId) {
     return NextResponse.json({ error: "No installation ID" }, { status: 400 });
   }
+  console.log("Event ignored is ...", event);
   const octokit = await getInstallationOctokitApp(installationId);
 
   let diffs = "",
