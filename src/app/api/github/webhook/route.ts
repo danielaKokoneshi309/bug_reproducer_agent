@@ -97,23 +97,31 @@ export async function POST(req: NextRequest) {
   ) {
     const reviewComment = payload.comment.body;
     const comments = reviewComment;
-    // Respond immediately
+    const owner = payload.repository.owner.login;
+    const repo = payload.repository.name;
+    const issue_number = payload.pull_request.number; // PR number
+
     addJob(async () => {
-      // This runs in the background
       const analysis = await analyzeRootCause({ logs, diffs, code, comments });
       console.log("Analysis (async):", analysis);
-      // Optionally: post analysis as a comment using octokit
+
+      // Post the analysis as a comment on the PR
+      await octokit.request(
+        "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+        {
+          owner,
+          repo,
+          issue_number,
+          body: `🤖 Root Cause Analysis:\n\n${analysis}`,
+        },
+      );
     });
     return NextResponse.json({ ok: true });
   } else {
-    console.log("Event ignored is ...", event);
     return NextResponse.json({ message: "Event ignored" });
   }
 
   const analysis = await analyzeRootCause({ logs, diffs, code, comments });
-
-  // To do Post the analysis as a comment on the PR/issue using GitHub API use octokit.issues.createComment({ owner, repo, issue_number, body: analysis })
-
   return NextResponse.json({ analysis: analysis });
 }
 
