@@ -108,12 +108,16 @@ export async function POST(req: NextRequest) {
         : String(analysis);
 
       await octokit.request(
-        "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+        "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
         {
           owner,
           repo,
-          issue_number: number,
+          pull_number: number,
           body: analysisText,
+          commit_id: payload.comment.commit_id,
+          path: payload.comment.path,
+          line: payload.comment.line,
+          side: payload.comment.side || "RIGHT",
         },
       );
     });
