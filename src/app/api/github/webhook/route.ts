@@ -31,28 +31,37 @@ export async function POST(req: NextRequest) {
     const repo = payload.repository.name;
     const owner = payload.repository.owner.login;
 
-    const { data: files } = await octokit.pulls.listFiles({
-      owner,
-      repo,
-      pull_number: number,
-    });
+    const { data: files } = await octokit.request(
+      "GET /repos/{owner}/{repo}/pulls/{pull_number}/files",
+      {
+        owner,
+        repo,
+        pull_number: number,
+      },
+    );
     diffs = (files || [])
       .map((d: any) => `File: ${d.filename}\n${d.patch || ""}`)
       .join("\n\n");
-    const { data: commentsArr } = await octokit.issues.listComments({
-      owner,
-      repo,
-      issue_number: number,
-    });
+    const { data: commentsArr } = await octokit.request(
+      "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+      {
+        owner,
+        repo,
+        issue_number: number,
+      },
+    );
     comments = (commentsArr || [])
       .map((c: any) => `${c.user?.login}: ${c.body}`)
       .join("\n\n");
 
-    const { data: pr } = await octokit.pulls.get({
-      owner,
-      repo,
-      pull_number: number,
-    });
+    const { data: pr } = await octokit.request(
+      "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+      {
+        owner,
+        repo,
+        pull_number: number,
+      },
+    );
 
     const logs = [
       ...extractLogsFromText(pr.body || ""),

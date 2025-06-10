@@ -13,10 +13,8 @@ const app = new App({
 });
 
 export async function getInstallationOctokit(installationId: number) {
-  const installationAccessToken = await app.getInstallationOctokit(
-    installationId,
-  );
-  return new Octokit({ auth: installationAccessToken });
+  const octokit = await app.getInstallationOctokit(installationId);
+  return octokit;
 }
 
 export async function fetchPRs(owner: string, repo: string) {
