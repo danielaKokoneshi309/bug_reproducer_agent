@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchIssueComments } from "@/app/lib/github";
 import { analyzeRootCause } from "@/app/lib/llm";
 import { getInstallationOctokit as getInstallationOctokitApp } from "@/app/lib/github";
+import { addJob } from "@/app/lib/queue";
 
 export async function POST(req: NextRequest) {
   const event = req.headers.get("x-github-event");
@@ -96,9 +97,14 @@ export async function POST(req: NextRequest) {
   ) {
     const reviewComment = payload.comment.body;
     const comments = reviewComment;
-    const analysis = await analyzeRootCause({ logs, diffs, code, comments });
-
-    return NextResponse.json({ analysis });
+    // Respond immediately
+    addJob(async () => {
+      // This runs in the background
+      const analysis = await analyzeRootCause({ logs, diffs, code, comments });
+      console.log("Analysis (async):", analysis);
+      // Optionally: post analysis as a comment using octokit
+    });
+    return NextResponse.json({ ok: true });
   } else {
     console.log("Event ignored is ...", event);
     return NextResponse.json({ message: "Event ignored" });
