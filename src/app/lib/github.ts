@@ -6,7 +6,7 @@ export const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
 const app = new App({
   appId: process.env.APP_ID!,
-  privateKey: process.env.PRIVATE_KEY!.replace(/\\n/g, "\n"),
+  privateKey: process.env.PRIVATE_KEY!,
   webhooks: {
     secret: process.env.WEBHOOK_SECRET!,
   },
