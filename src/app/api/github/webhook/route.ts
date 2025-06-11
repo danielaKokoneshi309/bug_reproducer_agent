@@ -107,21 +107,27 @@ export async function POST(req: NextRequest) {
         : String(analysis);
       console.log("Analysis text res being sent", analysisText);
       console.log("Payload", payload);
-      const res = await octokit.request(
-        "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
-        {
-          owner,
-          repo,
-          pull_number: number,
-          body: analysisText,
-          commit_id: payload.comment.commit_id,
-          path: payload.comment.path,
-          line: payload.comment.line,
-          side: payload.comment.side || "RIGHT",
-        },
-      );
-      console.log("Analysis posted", res);
-      return NextResponse.json({ ok: true });
+      if (
+        payload.sender?.type === "Bot" &&
+        payload.sender?.login === "bug-agent[bot]"
+      ) {
+        return;
+      } else {
+        const res = await octokit.request(
+          "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
+          {
+            owner,
+            repo,
+            pull_number: number,
+            body: analysisText,
+            commit_id: payload.comment.commit_id,
+            path: payload.comment.path,
+            in_reply_to: payload.comment.id,
+          },
+        );
+        console.log("Analysis posted", res);
+        return NextResponse.json({ ok: true });
+      }
     } catch (e) {
       console.error("Error posting analysis comment:", e);
       return NextResponse.json(
@@ -134,9 +140,6 @@ export async function POST(req: NextRequest) {
   }
 
   const analysis = await analyzeRootCause({ logs, diffs, code, comments });
-
-  // To do Post the analysis as a comment on the PR/issue using GitHub API use octokit.issues.createComment({ owner, repo, issue_number, body: analysis })
-
   return NextResponse.json({ analysis: analysis });
 }
 
