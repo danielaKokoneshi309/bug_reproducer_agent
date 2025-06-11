@@ -106,7 +106,8 @@ export async function POST(req: NextRequest) {
       const analysisText = Array.isArray(analysis)
         ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
         : String(analysis);
-
+      console.log("Analysis text res being sent", analysisText);
+      console.log("Payload", payload);
       const res = await octokit.request(
         "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
         {
