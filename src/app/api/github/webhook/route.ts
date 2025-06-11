@@ -111,7 +111,10 @@ export async function POST(req: NextRequest) {
         payload.sender?.type === "Bot" &&
         payload.sender?.login === "bug-agent[bot]"
       ) {
-        return;
+        return NextResponse.json(
+          { message: "Bot comment ignored" },
+          { status: 200 },
+        );
       } else {
         const res = await octokit.request(
           "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
