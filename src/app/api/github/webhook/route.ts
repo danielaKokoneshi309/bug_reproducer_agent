@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchIssueComments } from "@/app/lib/github";
 import { analyzeRootCause } from "@/app/lib/llm";
 import { getInstallationOctokit as getInstallationOctokitApp } from "@/app/lib/github";
-import { addJob } from "@/app/lib/queue";
 
 export async function POST(req: NextRequest) {
   const event = req.headers.get("x-github-event");
@@ -101,7 +100,7 @@ export async function POST(req: NextRequest) {
     const owner = payload.repository.owner.login;
     const number = payload.pull_request.number;
 
-    addJob(async () => {
+    try {
       const analysis = await analyzeRootCause({ logs, diffs, code, comments });
       const analysisText = Array.isArray(analysis)
         ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
@@ -122,9 +121,14 @@ export async function POST(req: NextRequest) {
         },
       );
       console.log("Analysis posted", res);
-    });
-
-    return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true });
+    } catch (e) {
+      console.error("Error posting analysis comment:", e);
+      return NextResponse.json(
+        { error: "Failed to post analysis comment" },
+        { status: 500 },
+      );
+    }
   } else {
     return NextResponse.json({ message: "Event ignored" });
   }
