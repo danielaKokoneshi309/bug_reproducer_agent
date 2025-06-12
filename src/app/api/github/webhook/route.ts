@@ -120,9 +120,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log("Comments", comments);
-    console.log("Commented Lines", payload.comment.position);
-    console.log("File Content", fileContent);
     try {
       const analysis = await analyzeRootCause({
         logs,
@@ -134,8 +131,6 @@ export async function POST(req: NextRequest) {
       const analysisText = Array.isArray(analysis)
         ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
         : String(analysis);
-      console.log("Analysis text res being sent", analysisText);
-      console.log("Payload", payload);
       if (
         payload.sender?.type === "Bot" &&
         payload.sender?.login === "bug-agent[bot]"
@@ -175,7 +170,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ analysis: analysis });
 }
 
-// Extract logs from PR body and comments
 function extractLogsFromText(text: string): string[] {
   if (!text) return [];
 
