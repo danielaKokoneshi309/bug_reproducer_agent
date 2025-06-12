@@ -100,8 +100,55 @@ export async function POST(req: NextRequest) {
     const owner = payload.repository.owner.login;
     const number = payload.pull_request.number;
 
+    const filePath = payload.comment.path;
+    const commitId = payload.comment.commit_id;
+
+    const { data: fileContentData } = await octokit.request(
+      "GET /repos/{owner}/{repo}/contents/{path}",
+      {
+        owner,
+        repo,
+        path: filePath,
+        ref: commitId,
+      },
+    );
+
+    let fileContent = "";
+    if (fileContentData && "content" in fileContentData) {
+      fileContent = Buffer.from(fileContentData.content, "base64").toString(
+        "utf-8",
+      );
+    }
+
+    const lines = fileContent.split("\n");
+
+    // For single-line comment:
+    const commentedLineNumber =
+      payload.comment.original_line || payload.comment.line; // 1-based
+    const commentedLine = commentedLineNumber
+      ? lines[commentedLineNumber - 1]
+      : "";
+
+    // For multi-line comment (if available):
+    let commentedLines = "";
+    if (payload.comment.start_line && payload.comment.line) {
+      const start = payload.comment.start_line - 1;
+      const end = payload.comment.line; // inclusive
+      commentedLines = lines.slice(start, end).join("\n");
+    }
+    console.log("Comments", comments);
+    console.log("Commented Lines", commentedLines);
+    console.log("Commented Line", commentedLine);
+    console.log("File Content", fileContent);
     try {
-      const analysis = await analyzeRootCause({ logs, diffs, code, comments });
+      const analysis = await analyzeRootCause({
+        logs,
+        diffs,
+        code: fileContent,
+        comments: `${comments}\n\nCommented Line(s):\n${
+          commentedLines || commentedLine
+        }`,
+      });
       const analysisText = Array.isArray(analysis)
         ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
         : String(analysis);
