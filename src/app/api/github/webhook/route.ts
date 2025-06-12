@@ -22,9 +22,8 @@ export async function POST(req: NextRequest) {
   const octokit = await getInstallationOctokitApp(installationId);
 
   let diffs = "",
-    code = "",
     comments = "";
-
+  const code = "";
   const logs = "";
 
   if (event === "pull_request" && payload.action === "opened") {
@@ -84,12 +83,36 @@ export async function POST(req: NextRequest) {
     const issue_number = payload.issue.number;
     const repo = payload.repository.name;
     const owner = payload.repository.owner.login;
-    const issueComments = await fetchIssueComments(owner, repo, issue_number);
 
-    comments = (issueComments || [])
+    // Get all comments on the issue
+    const issueComments = await fetchIssueComments(owner, repo, issue_number);
+    const comments = (issueComments || [])
       .map((c: any) => `${c.user?.login}: ${c.body}`)
       .join("\n\n");
-    code = "";
+
+    // Analyze root cause using issue body and comments
+    const logs = extractLogsFromText(payload.issue.body || "").join("\n");
+    const analysis = await analyzeRootCause({
+      logs,
+      diffs: "",
+      code: "",
+      comments: `${payload.issue.body}\n\n${comments}`,
+    });
+
+    // Post the analysis as a comment on the issue
+    await octokit.request(
+      "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+      {
+        owner,
+        repo,
+        issue_number,
+        body: Array.isArray(analysis)
+          ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
+          : String(analysis),
+      },
+    );
+
+    return NextResponse.json({ ok: true });
   } else if (
     event === "pull_request_review_comment" &&
     payload.action === "created"
