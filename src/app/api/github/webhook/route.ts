@@ -120,34 +120,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const lines = fileContent.split("\n");
+    // const lines = fileContent.split("\n");
 
     // For single-line comment:
-    const commentedLineNumber =
-      payload.comment.original_line || payload.comment.line; // 1-based
-    const commentedLine = commentedLineNumber
-      ? lines[commentedLineNumber - 1]
-      : "";
+    // const commentedLineNumber =
+    //   payload.comment.original_line || payload.comment.line; // 1-based
+    // const commentedLine = commentedLineNumber
+    //   ? lines[commentedLineNumber - 1]
+    //   : "";
 
-    // For multi-line comment (if available):
-    let commentedLines = "";
-    if (payload.comment.start_line && payload.comment.line) {
-      const start = payload.comment.start_line - 1;
-      const end = payload.comment.line; // inclusive
-      commentedLines = lines.slice(start, end).join("\n");
-    }
+    // // For multi-line comment (if available):
+    // let commentedLines = "";
+    // if (payload.comment.start_line && payload.comment.line) {
+    //   const start = payload.comment.start_line - 1;
+    //   const end = payload.comment.line; // inclusive
+    //   commentedLines = lines.slice(start, end).join("\n");
+    // }
     console.log("Comments", comments);
-    console.log("Commented Lines", commentedLines);
-    console.log("Commented Line", commentedLine);
+    console.log("Commented Lines", payload.comment.position);
     console.log("File Content", fileContent);
     try {
       const analysis = await analyzeRootCause({
         logs,
         diffs,
         code: fileContent,
-        comments: `${comments}\n\nCommented Line(s):\n${
-          commentedLines || commentedLine
-        }`,
+        comments: comments,
+        commentedLines: payload.comment.position,
       });
       const analysisText = Array.isArray(analysis)
         ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
@@ -172,6 +170,7 @@ export async function POST(req: NextRequest) {
             body: analysisText,
             commit_id: payload.comment.commit_id,
             path: payload.comment.path,
+            position: payload.comment.position,
             in_reply_to: payload.comment.id,
           },
         );

@@ -7,11 +7,13 @@ export const analyzeRootCause = async ({
   diffs,
   code,
   comments,
+  commentedLines,
 }: {
   logs?: string;
   diffs?: string;
   code?: string;
   comments?: string;
+  commentedLines?: string;
 }) => {
   const agent = new Agent({
     name: "Assistant",
@@ -28,6 +30,9 @@ ${code || "N/A"}
 
 Comments:
 ${comments || "N/A"}
+
+Commented Lines:
+${commentedLines || "N/A"}
 
 Return your answer in this format:
 ---
