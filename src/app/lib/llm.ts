@@ -31,7 +31,7 @@ ${code || "N/A"}
 Comments:
 ${comments || "N/A"}
 
-Commented Lines:
+Commented Lines, the analysis should be about the code in the commented lines:
 ${commentedLines || "N/A"}
 
 Return your answer in this format:
