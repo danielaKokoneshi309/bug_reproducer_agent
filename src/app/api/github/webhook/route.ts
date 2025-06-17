@@ -6,10 +6,29 @@ import {
 } from "@/app/lib/agents/analyzer/github";
 import { runBugReproWorkflow } from "@/app/lib/agents/analyzer/agents";
 import { analyzeRootCause } from "@/app/lib/llm";
+import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
-  const event = req.headers.get("x-github-event");
+  // Verify GitHub webhook signature
+  const signature = req.headers.get("x-hub-signature-256");
   const body = await req.text();
+
+  if (!signature) {
+    return NextResponse.json({ error: "No signature" }, { status: 401 });
+  }
+
+  const hmac = crypto.createHmac("sha256", process.env.WEBHOOK_SECRET || "");
+  const digest = `sha256=${hmac.update(body).digest("hex")}`;
+
+  if (signature !== digest) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  const event = req.headers.get("x-github-event");
+  if (!event) {
+    return NextResponse.json({ error: "No event type" }, { status: 400 });
+  }
+
   let payload: any = {};
   try {
     payload = JSON.parse(body);
@@ -21,79 +40,72 @@ export async function POST(req: NextRequest) {
   if (!installationId) {
     return NextResponse.json({ error: "No installation ID" }, { status: 400 });
   }
-  console.log("Event ignored is ...", event);
+
+  console.log("Processing event:", event);
   const octokit = await getInstallationOctokitApp(installationId);
 
-  let diffs = "",
-    comments = "";
-  const code = "";
-  const logs = "";
+  try {
+    if (event === "pull_request" && payload.action === "opened") {
+      const { number } = payload.pull_request;
+      const repo = payload.repository.name;
+      const owner = payload.repository.owner.login;
 
-  if (event === "pull_request" && payload.action === "opened") {
-    const { number } = payload.pull_request;
-    const repo = payload.repository.name;
-    const owner = payload.repository.owner.login;
+      const { data: files } = await octokit.request(
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}/files",
+        {
+          owner,
+          repo,
+          pull_number: number,
+        },
+      );
+      const diffs = (files || [])
+        .map((d: any) => `File: ${d.filename}\n${d.patch || ""}`)
+        .join("\n\n");
 
-    const { data: files } = await octokit.request(
-      "GET /repos/{owner}/{repo}/pulls/{pull_number}/files",
-      {
-        owner,
-        repo,
-        pull_number: number,
-      },
-    );
-    diffs = (files || [])
-      .map((d: any) => `File: ${d.filename}\n${d.patch || ""}`)
-      .join("\n\n");
-    const { data: commentsArr } = await octokit.request(
-      "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
-      {
-        owner,
-        repo,
-        issue_number: number,
-      },
-    );
-    comments = (commentsArr || [])
-      .map((c: any) => `${c.user?.login}: ${c.body}`)
-      .join("\n\n");
+      const { data: commentsArr } = await octokit.request(
+        "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+        {
+          owner,
+          repo,
+          issue_number: number,
+        },
+      );
+      const comments = (commentsArr || [])
+        .map((c: any) => `${c.user?.login}: ${c.body}`)
+        .join("\n\n");
 
-    const { data: pr } = await octokit.request(
-      "GET /repos/{owner}/{repo}/pulls/{pull_number}",
-      {
-        owner,
-        repo,
-        pull_number: number,
-      },
-    );
+      const { data: pr } = await octokit.request(
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+        {
+          owner,
+          repo,
+          pull_number: number,
+        },
+      );
 
-    const logs = [
-      ...extractLogsFromText(pr.body || ""),
-      ...commentsArr.flatMap((c: any) => extractLogsFromText(c.body || "")),
-    ].join("\n");
+      const logs = [
+        ...extractLogsFromText(pr.body || ""),
+        ...commentsArr.flatMap((c: any) => extractLogsFromText(c.body || "")),
+      ].join("\n");
 
-    const analysis = await analyzeRootCause({ logs, diffs, code, comments });
-    return NextResponse.json({ analysis });
-  } else if (event === "issue_comment" && payload.action === "created") {
-    const issue_number = payload.issue.number;
-    const repo = payload.repository.name;
-    const owner = payload.repository.owner.login;
-    const issueComments = await fetchIssueComments(owner, repo, issue_number);
+      const analysis = await analyzeRootCause({
+        logs,
+        diffs,
+        code: "",
+        comments,
+      });
+      return NextResponse.json({ analysis });
+    } else if (event === "issues" && payload.action === "opened") {
+      const issue_number = payload.issue.number;
+      const repo = payload.repository.name;
+      const owner = payload.repository.owner.login;
 
-    comments = (issueComments || [])
-      .map((c: any) => `${c.user?.login}: ${c.body}`)
-      .join("\n\n");
-  } else if (event === "issues" && payload.action === "opened") {
-    const issue_number = payload.issue.number;
-    const repo = payload.repository.name;
-    const owner = payload.repository.owner.login;
+      // Get all comments on the issue
+      const issueComments = await fetchIssueComments(owner, repo, issue_number);
+      const comments = (issueComments || [])
+        .map((c: any) => `${c.user?.login}: ${c.body}`)
+        .join("\n\n");
 
-    // Get all comments on the issue
-    const issueComments = await fetchIssueComments(owner, repo, issue_number);
-    const comments = (issueComments || [])
-      .map((c: any) => `${c.user?.login}: ${c.body}`)
-      .join("\n\n");
-
-    try {
       // Run the bug reproduction workflow
       const result = await runBugReproWorkflow({
         title: payload.issue.title,
@@ -113,32 +125,24 @@ export async function POST(req: NextRequest) {
       );
 
       return NextResponse.json({ ok: true });
-    } catch (error) {
-      console.error("Error in bug reproduction workflow:", error);
-      return NextResponse.json(
-        { error: "Failed to analyze issue" },
-        { status: 500 },
-      );
-    }
-  } else if (
-    event === "pull_request_review_comment" &&
-    payload.action === "created"
-  ) {
-    if (
-      payload.sender?.type === "Bot" &&
-      payload.sender?.login === "bug-agent[bot]"
+    } else if (
+      event === "pull_request_review_comment" &&
+      payload.action === "created"
     ) {
-      return NextResponse.json(
-        { message: "Bot comment ignored" },
-        { status: 200 },
-      );
-    }
+      if (
+        payload.sender?.type === "Bot" &&
+        payload.sender?.login === "bug-agent[bot]"
+      ) {
+        return NextResponse.json(
+          { message: "Bot comment ignored" },
+          { status: 200 },
+        );
+      }
 
-    const repo = payload.repository.name;
-    const owner = payload.repository.owner.login;
-    const number = payload.pull_request.number;
+      const repo = payload.repository.name;
+      const owner = payload.repository.owner.login;
+      const number = payload.pull_request.number;
 
-    try {
       // Run the bug reproduction workflow
       const result = await runBugReproWorkflow({
         title: `PR Review Comment on ${payload.pull_request.title}`,
@@ -147,7 +151,7 @@ export async function POST(req: NextRequest) {
       });
 
       // Post the analysis as a reply to the review comment
-      const res = await octokit.request(
+      await octokit.request(
         "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
         {
           owner,
@@ -159,21 +163,18 @@ export async function POST(req: NextRequest) {
           in_reply_to: payload.comment.id,
         },
       );
-      console.log("Analysis posted", res);
-      return NextResponse.json({ ok: true });
-    } catch (error) {
-      console.error("Error in bug reproduction workflow:", error);
-      return NextResponse.json(
-        { error: "Failed to analyze comment" },
-        { status: 500 },
-      );
-    }
-  } else {
-    return NextResponse.json({ message: "Event ignored" });
-  }
 
-  const analysis = await analyzeRootCause({ logs, diffs, code, comments });
-  return NextResponse.json({ analysis: analysis });
+      return NextResponse.json({ ok: true });
+    } else {
+      return NextResponse.json({ message: "Event ignored" }, { status: 200 });
+    }
+  } catch (error) {
+    console.error("Error processing webhook:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
 }
 
 function extractLogsFromText(text: string): string[] {
