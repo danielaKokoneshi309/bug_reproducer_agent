@@ -3,7 +3,9 @@ import { promises as fs } from "fs";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
-const docker = new Docker();
+const docker = new Docker({
+  socketPath: "/Users/klaudia/.docker/run/docker.sock",
+});
 
 export async function runContainer(scripts: {
   reproScript: string;
