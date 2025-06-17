@@ -22,7 +22,7 @@ export async function fetchPRs(owner: string, repo: string) {
   return data;
 }
 
-function extractLogsFromText(text: string): string[] {
+export function extractLogsFromText(text: string): string[] {
   if (!text) return [];
   const codeBlocks = Array.from(text.matchAll(/```([\s\S]*?)```/g)).map((m) =>
     m[1].trim(),

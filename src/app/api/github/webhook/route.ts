@@ -1,8 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-import { fetchIssueComments } from "@/app/lib/github";
+import {
+  fetchIssueComments,
+  getInstallationOctokit as getInstallationOctokitApp,
+} from "@/app/lib/agents/analyzer/github";
+import { runBugReproWorkflow } from "@/app/lib/agents/analyzer/agents";
 import { analyzeRootCause } from "@/app/lib/llm";
-import { getInstallationOctokit as getInstallationOctokitApp } from "@/app/lib/github";
 
 export async function POST(req: NextRequest) {
   const event = req.headers.get("x-github-event");
@@ -90,98 +93,78 @@ export async function POST(req: NextRequest) {
       .map((c: any) => `${c.user?.login}: ${c.body}`)
       .join("\n\n");
 
-    // Analyze root cause using issue body and comments
-    const logs = extractLogsFromText(payload.issue.body || "").join("\n");
-    const analysis = await analyzeRootCause({
-      logs,
-      diffs: "",
-      code: "",
-      comments: `${payload.issue.body}\n\n${comments}`,
-    });
+    try {
+      // Run the bug reproduction workflow
+      const result = await runBugReproWorkflow({
+        title: payload.issue.title,
+        body: payload.issue.body,
+        comments: [comments],
+      });
 
-    // Post the analysis as a comment on the issue
-    await octokit.request(
-      "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
-      {
-        owner,
-        repo,
-        issue_number,
-        body: Array.isArray(analysis)
-          ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
-          : String(analysis),
-      },
-    );
+      // Post the analysis as a comment on the issue
+      await octokit.request(
+        "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+        {
+          owner,
+          repo,
+          issue_number,
+          body: result.report || "",
+        },
+      );
 
-    return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true });
+    } catch (error) {
+      console.error("Error in bug reproduction workflow:", error);
+      return NextResponse.json(
+        { error: "Failed to analyze issue" },
+        { status: 500 },
+      );
+    }
   } else if (
     event === "pull_request_review_comment" &&
     payload.action === "created"
   ) {
-    const reviewComment = payload.comment.body;
-    const comments = reviewComment;
+    if (
+      payload.sender?.type === "Bot" &&
+      payload.sender?.login === "bug-agent[bot]"
+    ) {
+      return NextResponse.json(
+        { message: "Bot comment ignored" },
+        { status: 200 },
+      );
+    }
+
     const repo = payload.repository.name;
     const owner = payload.repository.owner.login;
     const number = payload.pull_request.number;
 
-    const filePath = payload.comment.path;
-    const commitId = payload.comment.commit_id;
-
-    const { data: fileContentData } = await octokit.request(
-      "GET /repos/{owner}/{repo}/contents/{path}",
-      {
-        owner,
-        repo,
-        path: filePath,
-        ref: commitId,
-      },
-    );
-
-    let fileContent = "";
-    if (fileContentData && "content" in fileContentData) {
-      fileContent = Buffer.from(fileContentData.content, "base64").toString(
-        "utf-8",
-      );
-    }
-
     try {
-      const analysis = await analyzeRootCause({
-        logs,
-        diffs,
-        code: fileContent,
-        comments: comments,
-        commentedLines: payload.comment.position,
+      // Run the bug reproduction workflow
+      const result = await runBugReproWorkflow({
+        title: `PR Review Comment on ${payload.pull_request.title}`,
+        body: payload.comment.body,
+        comments: [],
       });
-      const analysisText = Array.isArray(analysis)
-        ? analysis.map((a: any) => a.content?.[0]?.text || "").join("\n")
-        : String(analysis);
-      if (
-        payload.sender?.type === "Bot" &&
-        payload.sender?.login === "bug-agent[bot]"
-      ) {
-        return NextResponse.json(
-          { message: "Bot comment ignored" },
-          { status: 200 },
-        );
-      } else {
-        const res = await octokit.request(
-          "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
-          {
-            owner,
-            repo,
-            pull_number: number,
-            body: analysisText,
-            commit_id: payload.comment.commit_id,
-            path: payload.comment.path,
-            in_reply_to: payload.comment.id,
-          },
-        );
-        console.log("Analysis posted", res);
-        return NextResponse.json({ ok: true });
-      }
-    } catch (e) {
-      console.error("Error posting analysis comment:", e);
+
+      // Post the analysis as a reply to the review comment
+      const res = await octokit.request(
+        "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
+        {
+          owner,
+          repo,
+          pull_number: number,
+          body: result.report || "",
+          commit_id: payload.comment.commit_id,
+          path: payload.comment.path,
+          in_reply_to: payload.comment.id,
+        },
+      );
+      console.log("Analysis posted", res);
+      return NextResponse.json({ ok: true });
+    } catch (error) {
+      console.error("Error in bug reproduction workflow:", error);
       return NextResponse.json(
-        { error: "Failed to post analysis comment" },
+        { error: "Failed to analyze comment" },
         { status: 500 },
       );
     }
